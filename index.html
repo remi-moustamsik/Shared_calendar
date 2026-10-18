@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nos disponibilités</title>
+<style>
+  /* ===== DESIGN : modifie ces variables pour changer le look ===== */
+  :root {
+    --fond: #f7f7f5;
+    --carte: #ffffff;
+    --texte: #1d1d1f;
+    --discret: #8a8a8e;
+    --bordure: #e4e4e2;
+    --principal: #2f7d5b;        /* couleur des dispos */
+    --principal-clair: #d8efe4;  /* fond des jours où TU es dispo */
+    --meilleur: #f2b632;         /* contour du/des meilleur(s) jour(s) */
+    --rayon: 10px;
+    --police: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--police); background: var(--fond); color: var(--texte); }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { margin: 0 0 4px; font-size: 1.6rem; }
+  .sous-titre { margin: 0 0 20px; color: var(--discret); }
+
+  .identite { display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    background: var(--carte); border: 1px solid var(--bordure); border-radius: var(--rayon);
+    padding: 12px; margin-bottom: 16px; }
+  .identite input { flex: 1; min-width: 160px; padding: 10px; font: inherit;
+    border: 1px solid var(--bordure); border-radius: 8px; }
+  .identite button { padding: 10px 16px; font: inherit; border: 0; border-radius: 8px;
+    background: var(--principal); color: #fff; cursor: pointer; }
+  .identite .info { width: 100%; font-size: .85rem; color: var(--discret); }
+
+  .meilleurs { background: var(--carte); border: 1px solid var(--bordure);
+    border-left: 4px solid var(--meilleur); border-radius: var(--rayon);
+    padding: 12px; margin-bottom: 20px; }
+
+  .mois { margin-bottom: 24px; }
+  .mois h2 { font-size: 1.1rem; text-transform: capitalize; margin: 0 0 8px; }
+  .grille { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .entete { font-size: .75rem; color: var(--discret); text-align: center; padding: 4px 0; }
+
+  .jour { min-height: 84px; background: var(--carte); border: 1px solid var(--bordure);
+    border-radius: 8px; padding: 6px; text-align: left; font: inherit; color: inherit;
+    display: flex; flex-direction: column; gap: 2px; cursor: pointer; overflow: hidden; }
+  .jour.vide { visibility: hidden; }
+  .jour.hors { background: transparent; color: var(--discret); cursor: default; opacity: .45; }
+  .jour.moi { background: var(--principal-clair); border-color: var(--principal); }
+  .jour.top { box-shadow: inset 0 0 0 2px var(--meilleur); }
+  .num { font-weight: 600; }
+  .compte { font-size: .75rem; color: var(--principal); font-weight: 600; }
+  .noms { font-size: .7rem; color: var(--discret); line-height: 1.25; word-break: break-word; }
+
+  .etat { font-size: .85rem; color: #b3261e; margin-top: 8px; min-height: 1em; }
+
+  @media (max-width: 520px) {
+    .jour { min-height: 70px; padding: 4px; }
+    .noms { font-size: .62rem; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="titre">Nos disponibilités</h1>
+  <p class="sous-titre" id="periode"></p>
+
+  <form class="identite" id="form-prenom">
+    <input id="prenom" placeholder="Ton prénom" maxlength="30" autocomplete="given-name" required>
+    <button type="submit">C'est moi</button>
+    <div class="info" id="info-prenom">Entre ton prénom, puis clique sur les jours où tu es disponible.</div>
+  </form>
+
+  <div class="meilleurs" id="meilleurs">Chargement…</div>
+  <div id="calendrier"></div>
+  <div class="etat" id="etat"></div>
+</main>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, collection, doc, onSnapshot, setDoc, arrayUnion, arrayRemove }
+    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  // ===== 1) COLLE ICI TA CONFIGURATION FIREBASE =====
+  const firebaseConfig = {
+    apiKey: "AIzaSyCT3-z3f2ZrPc0IeZV_Y2tgktkwgpbo04M",
+    authDomain: "calendar202612.firebaseapp.com",
+    projectId: "calendar202612",
+    storageBucket: "calendar202612.firebasestorage.app",
+    messagingSenderId: "270346129223",
+    appId: "1:270346129223:web:4f64b532d632d06303c662"
+  };
+
+  // ===== 2) PÉRIODE ET TITRE (dates au format AAAA-MM-JJ) =====
+  const DEBUT = "2026-10-01";
+  const FIN   = "2026-12-30";
+  const TITRE = "Nos disponibilités";
+
+  // ===== Le reste n'a pas besoin d'être modifié =====
+  const db = getFirestore(initializeApp(firebaseConfig));
+  const $ = id => document.getElementById(id);
+
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const lire = s => { const [a, m, j] = s.split("-").map(Number); return new Date(a, m - 1, j); };
+  const joli = s => lire(s).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+
+  let moi = "";
+  try { moi = localStorage.getItem("prenom") || ""; } catch (e) {}
+  let dispos = {}; // { prénom: Set de dates }
+
+  document.title = TITRE;
+  $("titre").textContent = TITRE;
+  $("periode").textContent = `Du ${joli(DEBUT)} au ${joli(FIN)}`;
+  $("prenom").value = moi;
+  majInfo();
+
+  function majInfo() {
+    $("info-prenom").textContent = moi
+      ? `Tu es « ${moi} ». Clique sur un jour pour te dire dispo, reclique pour annuler.`
+      : "Entre ton prénom, puis clique sur les jours où tu es disponible.";
+  }
+
+  $("form-prenom").addEventListener("submit", e => {
+    e.preventDefault();
+    const p = $("prenom").value.trim().replace(/\//g, "-");
+    if (!p || p === "." || p === "..") return;
+    moi = p;
+    try { localStorage.setItem("prenom", moi); } catch (e) {}
+    majInfo();
+    rendre();
+  });
+
+  function basculer(jour) {
+    if (!moi) { $("prenom").focus(); $("etat").textContent = "Entre d'abord ton prénom."; return; }
+    $("etat").textContent = "";
+    const dejaDispo = dispos[moi]?.has(jour);
+    setDoc(doc(db, "dispos", moi), { jours: dejaDispo ? arrayRemove(jour) : arrayUnion(jour) }, { merge: true })
+      .catch(err => { $("etat").textContent = "Erreur d'enregistrement : " + err.message; });
+  }
+
+  function rendre() {
+    const d0 = lire(DEBUT), d1 = lire(FIN);
+
+    // Qui est dispo chaque jour
+    const parJour = {};
+    for (const [p, jours] of Object.entries(dispos))
+      for (const j of jours) (parJour[j] ??= []).push(p);
+
+    // Meilleur(s) jour(s) dans la période
+    let max = 0;
+    for (let d = new Date(d0); d <= d1; d.setDate(d.getDate() + 1))
+      max = Math.max(max, (parJour[iso(d)] || []).length);
+    const tops = [];
+    if (max > 0)
+      for (let d = new Date(d0); d <= d1; d.setDate(d.getDate() + 1))
+        if ((parJour[iso(d)] || []).length === max) tops.push(iso(d));
+
+    $("meilleurs").textContent = max === 0
+      ? "Personne n'a encore indiqué de disponibilité."
+      : `⭐ Meilleur${tops.length > 1 ? "s jours" : " jour"} (${max} personne${max > 1 ? "s" : ""}) : ${tops.map(joli).join(", ")}`;
+
+    // Calendrier, mois par mois
+    const cal = $("calendrier");
+    cal.innerHTML = "";
+    for (let m = new Date(d0.getFullYear(), d0.getMonth(), 1); m <= d1; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
+      const bloc = document.createElement("section");
+      bloc.className = "mois";
+      const h2 = document.createElement("h2");
+      h2.textContent = m.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+      const grille = document.createElement("div");
+      grille.className = "grille";
+
+      for (const n of ["L", "M", "M", "J", "V", "S", "D"]) {
+        const e = document.createElement("div"); e.className = "entete"; e.textContent = n; grille.append(e);
+      }
+      const decalage = (m.getDay() + 6) % 7; // semaine commençant le lundi
+      for (let i = 0; i < decalage; i++) {
+        const v = document.createElement("div"); v.className = "jour vide"; grille.append(v);
+      }
+
+      const nbJours = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+      for (let j = 1; j <= nbJours; j++) {
+        const date = new Date(m.getFullYear(), m.getMonth(), j);
+        const cle = iso(date);
+        const case_ = document.createElement("button");
+        case_.type = "button";
+        case_.className = "jour";
+        const num = document.createElement("span"); num.className = "num"; num.textContent = j;
+        case_.append(num);
+
+        if (date < d0 || date > d1) {
+          case_.classList.add("hors"); case_.disabled = true;
+        } else {
+          const qui = (parJour[cle] || []).sort((a, b) => a.localeCompare(b, "fr"));
+          if (moi && qui.includes(moi)) case_.classList.add("moi");
+          if (tops.includes(cle)) case_.classList.add("top");
+          if (qui.length) {
+            const c = document.createElement("span"); c.className = "compte";
+            c.textContent = `${qui.length} dispo${qui.length > 1 ? "s" : ""}`;
+            const noms = document.createElement("span"); noms.className = "noms";
+            noms.textContent = qui.join(", ");
+            case_.append(c, noms);
+          }
+          case_.addEventListener("click", () => basculer(cle));
+        }
+        grille.append(case_);
+      }
+      bloc.append(h2, grille);
+      cal.append(bloc);
+    }
+  }
+
+  // Mise à jour en direct quand quelqu'un modifie ses dispos
+  onSnapshot(collection(db, "dispos"), snap => {
+    dispos = {};
+    snap.forEach(d => { dispos[d.id] = new Set(d.data().jours || []); });
+    rendre();
+  }, err => {
+    $("etat").textContent = "Impossible de lire les données : " + err.message;
+  });
+
+  rendre();
+</script>
+</body>
+</html>
