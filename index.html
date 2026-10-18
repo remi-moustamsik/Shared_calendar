@@ -21,7 +21,7 @@
 
   * { box-sizing: border-box; }
   body { margin: 0; font-family: var(--police); background: var(--fond); color: var(--texte); }
-  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+  main { max-width: 1150px; margin: 0 auto; padding: 24px 16px 80px; }
   h1 { margin: 0 0 4px; font-size: 1.6rem; }
   .sous-titre { margin: 0 0 20px; color: var(--discret); }
 
@@ -36,14 +36,29 @@
 
   .meilleurs { background: var(--carte); border: 1px solid var(--bordure);
     border-left: 4px solid var(--meilleur); border-radius: var(--rayon);
-    padding: 12px; margin-bottom: 20px; }
+    padding: 12px; margin-bottom: 16px; }
+
+  /* Bouton « Voir les disponibilités » */
+  .btn-voir { padding: 8px 14px; font: inherit; border: 1px solid var(--principal);
+    background: var(--carte); color: var(--principal); border-radius: 8px;
+    cursor: pointer; margin-bottom: 12px; }
+  .btn-voir.actif { background: var(--principal); color: #fff; }
+
+  /* Barre du bas qui affiche les prénoms d'un jour */
+  .detail { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    max-width: min(90vw, 480px); background: var(--texte); color: var(--fond);
+    padding: 10px 14px; border-radius: var(--rayon); font-size: .9rem;
+    box-shadow: 0 4px 16px rgba(0,0,0,.2); z-index: 10; }
+
+  /* Calendrier + panneau de droite */
+  .mise-en-page { display: grid; grid-template-columns: 1fr 240px; gap: 20px; align-items: start; }
 
   .mois { margin-bottom: 24px; }
   .mois h2 { font-size: 1.1rem; text-transform: capitalize; margin: 0 0 8px; }
   .grille { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
   .entete { font-size: .75rem; color: var(--discret); text-align: center; padding: 4px 0; }
 
-  .jour { min-height: 84px; background: var(--carte); border: 1px solid var(--bordure);
+  .jour { min-height: 70px; background: var(--carte); border: 1px solid var(--bordure);
     border-radius: 8px; padding: 6px; text-align: left; font: inherit; color: inherit;
     display: flex; flex-direction: column; gap: 2px; cursor: pointer; overflow: hidden; }
   .jour.vide { visibility: hidden; }
@@ -51,14 +66,28 @@
   .jour.moi { background: var(--principal-clair); border-color: var(--principal); }
   .jour.top { box-shadow: inset 0 0 0 2px var(--meilleur); }
   .num { font-weight: 600; }
-  .compte { font-size: .75rem; color: var(--principal); font-weight: 600; }
-  .noms { font-size: .7rem; color: var(--discret); line-height: 1.25; word-break: break-word; }
+  .compte { font-size: 1.1rem; color: var(--principal); font-weight: 700; margin-top: auto; }
+  .mode-voir .jour:not(.hors) { cursor: help; }
+
+  /* Panneau des participants */
+  .panneau { background: var(--carte); border: 1px solid var(--bordure); border-radius: var(--rayon);
+    padding: 12px; position: sticky; top: 16px; }
+  .panneau h2 { font-size: 1rem; margin: 0 0 8px; }
+  .panneau ul { list-style: none; margin: 0; padding: 0; }
+  .panneau li { display: flex; justify-content: space-between; padding: 6px 0;
+    border-top: 1px solid var(--bordure); font-size: .9rem; }
+  .panneau li:first-child { border-top: 0; }
+  .panneau li.moi { font-weight: 600; color: var(--principal); }
+  .panneau .nb { color: var(--discret); }
 
   .etat { font-size: .85rem; color: #b3261e; margin-top: 8px; min-height: 1em; }
 
+  @media (max-width: 760px) {
+    .mise-en-page { grid-template-columns: 1fr; }
+    .panneau { position: static; }
+  }
   @media (max-width: 520px) {
-    .jour { min-height: 70px; padding: 4px; }
-    .noms { font-size: .62rem; }
+    .jour { min-height: 56px; padding: 4px; }
   }
 </style>
 </head>
@@ -74,7 +103,17 @@
   </form>
 
   <div class="meilleurs" id="meilleurs">Chargement…</div>
-  <div id="calendrier"></div>
+  <button type="button" id="btn-voir" class="btn-voir">Voir les disponibilités</button>
+  <div class="detail" id="detail" hidden></div>
+
+  <div class="mise-en-page">
+    <div id="calendrier"></div>
+    <aside class="panneau">
+      <h2>Participants</h2>
+      <ul id="participants"></ul>
+    </aside>
+  </div>
+
   <div class="etat" id="etat"></div>
 </main>
 
@@ -84,14 +123,14 @@
     from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   // ===== 1) COLLE ICI TA CONFIGURATION FIREBASE =====
-  const firebaseConfig = {
-    apiKey: "AIzaSyCT3-z3f2ZrPc0IeZV_Y2tgktkwgpbo04M",
-    authDomain: "calendar202612.firebaseapp.com",
-    projectId: "calendar202612",
-    storageBucket: "calendar202612.firebasestorage.app",
-    messagingSenderId: "270346129223",
-    appId: "1:270346129223:web:4f64b532d632d06303c662"
-  };
+const firebaseConfig = {
+  apiKey: "AIzaSyCT3-z3f2ZrPc0IeZV_Y2tgktkwgpbo04M",
+  authDomain: "calendar202612.firebaseapp.com",
+  projectId: "calendar202612",
+  storageBucket: "calendar202612.firebasestorage.app",
+  messagingSenderId: "270346129223",
+  appId: "1:270346129223:web:4f64b532d632d06303c662"
+};
 
   // ===== 2) PÉRIODE ET TITRE (dates au format AAAA-MM-JJ) =====
   const DEBUT = "2026-10-01";
@@ -108,7 +147,8 @@
 
   let moi = "";
   try { moi = localStorage.getItem("prenom") || ""; } catch (e) {}
-  let dispos = {}; // { prénom: Set de dates }
+  let dispos = {};       // { prénom: Set de dates }
+  let modeVoir = false;  // true = mode consultation
 
   document.title = TITRE;
   $("titre").textContent = TITRE;
@@ -140,6 +180,23 @@
       .catch(err => { $("etat").textContent = "Erreur d'enregistrement : " + err.message; });
   }
 
+  // Affiche les prénoms d'un jour dans la barre du bas
+  function montrer(jour, qui) {
+    const d = $("detail");
+    d.textContent = `${joli(jour)} : ${qui.length ? qui.join(", ") : "personne"}`;
+    d.hidden = false;
+  }
+
+  // Bouton qui active / désactive le mode consultation
+  $("btn-voir").addEventListener("click", () => {
+    modeVoir = !modeVoir;
+    const b = $("btn-voir");
+    b.classList.toggle("actif", modeVoir);
+    b.textContent = modeVoir ? "Revenir à mes disponibilités" : "Voir les disponibilités";
+    document.body.classList.toggle("mode-voir", modeVoir);
+    if (!modeVoir) $("detail").hidden = true;
+  });
+
   function rendre() {
     const d0 = lire(DEBUT), d1 = lire(FIN);
 
@@ -160,6 +217,31 @@
     $("meilleurs").textContent = max === 0
       ? "Personne n'a encore indiqué de disponibilité."
       : `⭐ Meilleur${tops.length > 1 ? "s jours" : " jour"} (${max} personne${max > 1 ? "s" : ""}) : ${tops.map(joli).join(", ")}`;
+
+    // Panneau des participants
+    const ul = $("participants");
+    ul.innerHTML = "";
+    const liste = Object.entries(dispos)
+      .map(([p, jours]) => [p, [...jours].filter(j => j >= DEBUT && j <= FIN).length])
+      .filter(([, n]) => n > 0)
+      .sort((a, b) => a[0].localeCompare(b[0], "fr"));
+
+    if (!liste.length) {
+      const li = document.createElement("li");
+      li.textContent = "Personne pour l'instant.";
+      ul.append(li);
+    }
+    for (const [p, n] of liste) {
+      const li = document.createElement("li");
+      if (p === moi) li.classList.add("moi");
+      const nom = document.createElement("span");
+      nom.textContent = p;
+      const nb = document.createElement("span");
+      nb.className = "nb";
+      nb.textContent = `${n} jour${n > 1 ? "s" : ""}`;
+      li.append(nom, nb);
+      ul.append(li);
+    }
 
     // Calendrier, mois par mois
     const cal = $("calendrier");
@@ -198,12 +280,12 @@
           if (tops.includes(cle)) case_.classList.add("top");
           if (qui.length) {
             const c = document.createElement("span"); c.className = "compte";
-            c.textContent = `${qui.length} dispo${qui.length > 1 ? "s" : ""}`;
-            const noms = document.createElement("span"); noms.className = "noms";
-            noms.textContent = qui.join(", ");
-            case_.append(c, noms);
+            c.textContent = qui.length;
+            case_.append(c);
           }
-          case_.addEventListener("click", () => basculer(cle));
+          // Mode consultation : on montre les prénoms. Sinon : on coche / décoche.
+          case_.addEventListener("click", () => modeVoir ? montrer(cle, qui) : basculer(cle));
+          case_.addEventListener("mouseenter", () => { if (modeVoir) montrer(cle, qui); });
         }
         grille.append(case_);
       }
